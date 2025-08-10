@@ -1,0 +1,11 @@
+#Non docker
+uvicorn main:app --reload
+
+
+
+# Build Docker image
+docker build -t audioident .
+
+# Run the app
+docker run -p 8000:8000 audioident
+
