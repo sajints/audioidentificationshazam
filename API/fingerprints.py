@@ -35,6 +35,7 @@ def detect_peaksnew(Sxx_db, threshold=-40, neighborhood_size=(20, 20)):
 #             peak_coords.append((time_idx, freq_idx))
 #     return np.array(peak_coords)
 
+
 def generate_fingerprints(peaks, fan_value=5):
     fingerprints = []
     #print(f"peaks - length={len(peaks)} -- peaks={peaks}")
@@ -69,6 +70,7 @@ def generate_fingerprints(peaks, fan_value=5):
 #                     fingerprints.append((h, t1))
 #     return fingerprints
 
+
 def process_audio(audio_path):
     y, sr = librosa.load(audio_path, duration=7, sr=44100) #sr = sampling rate. Load an audio file as a floating point time series.
     Sxx = np.abs(librosa.stft(y, n_fft=4096, hop_length=1024)) # Short-time Fourier transform (STFT).
@@ -77,52 +79,7 @@ def process_audio(audio_path):
     fingerprints = generate_fingerprints(peaks)
     return fingerprints
 
-def compare_fingerprints_old(fp1, fp2, threshold=0.5):
-    """
-    Compare two fingerprint lists and return similarity score & match flag.
-    Handles both hex strings and integers.
-    """
 
-    def normalize_fp(fp_list):
-        cleaned = []
-        for h in fp_list:
-            if h is None:
-                continue
-            if isinstance(h, int):
-                cleaned.append(h)
-            elif isinstance(h, str):
-                try:
-                    cleaned.append(int(h, 16))
-                except ValueError:
-                    continue
-            else:
-                try:
-                    cleaned.append(int(h))
-                except (ValueError, TypeError):
-                    continue
-        return cleaned
-
-    ints1 = normalize_fp(fp1)
-    ints2 = normalize_fp(fp2)
-
-    if not ints1 or not ints2:
-        return 0.0, False
-
-    set1 = set(ints1)
-    set2 = set(ints2)
-
-    matches = set1 & set2
-    score = len(matches) / max(len(set1), len(set2))
-    is_match = score >= threshold
-
-    return score, is_match
-
-
-# Example usage
-# fp_a = [0.1, 0.2, 0.3]
-# fp_b = [0.1, 0.21, 0.29]
-# sim, is_match = compare_fingerprints(fp_a, fp_b)
-# print(f"Similarity: {sim:.4f}, Match: {is_match}")
 
 HashOrTuple = Union[str, int, Tuple[Union[str,int], float]]
 
@@ -279,7 +236,9 @@ def compare_fingerprints(fp1: List[HashOrTuple],
     #         return score, is_match, details
     #     return score, is_match
 
-    # Fallback
+    
+    return score, score >= threshold
+        # Fallback
     if debug:
         return 0.0, False, {"error": "unknown method"}
     return 0.0, False

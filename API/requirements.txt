@@ -4,3 +4,7 @@ librosa
 scipy
 numpy
 python-multipart
+chromadb
+transformers
+torch
+psycopg2
