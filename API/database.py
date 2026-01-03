@@ -8,7 +8,7 @@ def store_fingerprints(interactionid, fingerprints, filename):
         port="5432",
         database="postgres",
         user="postgres",
-        password="pwd") as conn:
+        password="admin") as conn:
 
         with conn.cursor() as cur:
             data = []
@@ -39,7 +39,7 @@ def find_match_in_db(fingerprints):
     # 2. Database Connection
     query = "SELECT interactionid, offsetms, hash, filename FROM fingerprints WHERE hash IN %s"
     
-    with psycopg2.connect(host="localhost", port="5432", database="postgres", user="postgres", password="pwd") as conn:
+    with psycopg2.connect(host="localhost", port="5432", database="postgres", user="postgres", password="admin") as conn:
         with conn.cursor() as cur:
             # We must pass a tuple of ALL packed hashes
             cur.execute(query, (tuple(packed_hashes_to_search),))
@@ -77,7 +77,7 @@ def find_match_in_db(fingerprints):
                 # Score = how many hashes lined up at that specific offset
                 # len(fingerprints) is the total number of hashes we searched for
                 score = hit_count / len(fingerprints)
-                
+                print(f"interactionid={interactionid}--score={score}--best_offset={best_offset}")
                 final_results.append({
                     "interactionid": interactionid,
                     "score": round(score, 4),

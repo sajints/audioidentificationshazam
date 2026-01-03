@@ -5,10 +5,11 @@ import os
 import sys
 from fingerprints import process_audio, compare_fingerprints
 from fingerprintsv2 import compare_fingerprints_robust, compare_fingerprints_v2, process_audio_v2
-from fingerprintsv3 import compare_fingerprints_v3, process_audio_v3
+
 from sqllite import create_database, store_fingerprints, match_fingerprints
 from chromavector import chromavectordb
-from database import store_fingerprints, find_match_in_db #convert_fingerprint, 
+ #convert_fingerprint, 
+from service import searchaudioservice, saveaudioservice
 
 app = FastAPI()
 # Allow all origins (or restrict to specific ones)
@@ -24,29 +25,11 @@ create_database()
 
 UPLOAD_FOLDER = "audio_files"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-counter = 1
+
 
 @app.post("/saveaudio")
 async def saveaudio(file1: UploadFile):
-    temp_dir = "temp"
-    os.makedirs(temp_dir, exist_ok=True)
-
-    path1 = os.path.join(temp_dir, file1.filename)
-    #path2 = os.path.join(temp_dir, file2.filename)
-
-    # Save both files correctly
-    with open(path1, "wb") as f:
-        shutil.copyfileobj(file1.file, f)
-
-    # 3. Generate Speech-Optimized Fingerprints
-    fingerprints = process_audio_v3(path1)
-    print(f"fingerprints={fingerprints}")
-
-    filename = file1.filename
-    # Process the entire list
-    # hash,offset = [convert_fingerprint(h, t) for h, t in fingerprints]
-    store_fingerprints(counter,fingerprints,filename)
-    print(f"fingerprints={fingerprints}--counter={counter}--filename={filename}")
+    return saveaudioservice(file1)
 
     # db = chromavectordb()
     # result = db.search(fingerprints,5)
@@ -57,27 +40,7 @@ async def saveaudio(file1: UploadFile):
 
 @app.post("/searchaudio")
 async def searchaudio(file1: UploadFile):
-    temp_dir = "temp"
-    os.makedirs(temp_dir, exist_ok=True)
-
-    path1 = os.path.join(temp_dir, file1.filename)
-    #path2 = os.path.join(temp_dir, file2.filename)
-
-    # Save both files correctly
-    with open(path1, "wb") as f:
-        shutil.copyfileobj(file1.file, f)
-
-    # 3. Generate Speech-Optimized Fingerprints
-    fingerprints = process_audio_v3(path1)
-    print(f"fingerprints={fingerprints}")
-
-    #filename = file1.file
-    # Process the entire list
-    # hash,offset = [convert_fingerprint(h, t) for h, t in fingerprints]
-    #store_fingerprints(counter,fingerprints,filename)
-    
-    # print(f"fingerprints={fingerprints}--counter={counter}--filename={filename}")
-    return find_match_in_db(fingerprints)
+    return searchaudioservice(file1)
 
 @app.post("/fingerprint")
 async def fingerprint_audio(file: UploadFile = File(...), song_id: str = Form(...)):
