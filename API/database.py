@@ -24,69 +24,148 @@ def store_fingerprints(interactionid, fingerprints, filename):
             cur.executemany(query, data)
             conn.commit()
 
-def find_match_in_db(fingerprints):
-    # 1. Prepare packed hashes for the search and the map
+def find_match_in_db(fingerprints, min_score=0.05, top_n=5):
+    """
+    Finds matches while ignoring noise/silence and filtering weak results.
+    """
+    # 1. Prepare packed hashes and filter out "Empty/Silent" fingerprints
     packed_hashes_to_search = []
-    # query_map must map: {packed_int_hash: offset_ms}
-    # This allows us to compare DB results to our query clip
     query_map = {} 
 
     for h, t in fingerprints:
+        # OPTIONAL: If your fingerprinting tool provides 'energy' or 'amplitude',
+        # check it here. If energy < threshold: continue
+        
         p_hash, p_offset_ms = convert_fingerprint(h, t)
-        packed_hashes_to_search.append(p_hash)
-        query_map[p_hash] = p_offset_ms # Store the packed version!
+        
+        # We only search for hashes that aren't "null" or represent pure silence
+        if p_hash: 
+            packed_hashes_to_search.append(p_hash)
+            query_map[p_hash] = p_offset_ms
+
+    if not packed_hashes_to_search:
+        return []
 
     # 2. Database Connection
+    # Using a JOIN or specific indexing here is better for performance
     query = "SELECT interactionid, offsetms, hash, filename FROM fingerprints WHERE hash IN %s"
     
-    with psycopg2.connect(host="localhost", port="5432", database="postgres", user="postgres", password="admin") as conn:
-        with conn.cursor() as cur:
-            # We must pass a tuple of ALL packed hashes
-            cur.execute(query, (tuple(packed_hashes_to_search),))
-            results = cur.fetchall()
+    # SECURITY NOTE: In production, use environment variables for these!
+    try:
+        with psycopg2.connect(
+            host="localhost", port="5432", 
+            database="postgres", user="postgres", password="admin"
+        ) as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (tuple(packed_hashes_to_search),))
+                results = cur.fetchall()
 
-            # 3. Grouping results by interactionid
-            matches = defaultdict(lambda: {"offsets": [], "filename": None})
+                # 3. Grouping results by interactionid
+                matches = defaultdict(lambda: {"offsets": [], "filename": None})
+                for interactionid, db_offset_ms, h, filename in results:
+                    q_offset_ms = query_map.get(h) 
+                    if q_offset_ms is None: continue 
+                    
+                    delta_t = db_offset_ms - q_offset_ms
+                    if matches[interactionid]["filename"] is None:
+                        matches[interactionid]["filename"] = filename
+                    
+                    matches[interactionid]["offsets"].append(delta_t)
+
+                # 4. Scoring and Filtering
+                final_results = []
+                total_query_hashes = len(fingerprints)
+
+                for interactionid, data in matches.items():
+                    counts = Counter(data["offsets"])
+                    best_offset, hit_count = counts.most_common(1)[0]
+                    
+                    # Score calculation
+                    score = hit_count / total_query_hashes
+                    
+                    # LOGIC: Ignore results that don't meet the minimum match threshold
+                    # This prevents "random" background noise from counting as a match.
+                    if score < min_score:
+                        continue
+
+                    final_results.append({
+                        "interactionid": interactionid,
+                        "score": round(score, 4),
+                        "offset_ms": best_offset,
+                        "filename": data["filename"]
+                    })
+
+                # Sort and return Top N
+                return sorted(final_results, key=lambda x: x['score'], reverse=True)[:top_n]
+
+    except Exception as e:
+        print(f"Database error: {e}")
+        return []
+
+# def find_match_in_db(fingerprints):
+#     # 1. Prepare packed hashes for the search and the map
+#     packed_hashes_to_search = []
+#     # query_map must map: {packed_int_hash: offset_ms}
+#     # This allows us to compare DB results to our query clip
+#     query_map = {} 
+
+#     for h, t in fingerprints:
+#         p_hash, p_offset_ms = convert_fingerprint(h, t)
+#         packed_hashes_to_search.append(p_hash)
+#         query_map[p_hash] = p_offset_ms # Store the packed version!
+
+#     # 2. Database Connection
+#     query = "SELECT interactionid, offsetms, hash, filename FROM fingerprints WHERE hash IN %s"
+    
+#     with psycopg2.connect(host="localhost", port="5432", database="postgres", user="postgres", password="admin") as conn:
+#         with conn.cursor() as cur:
+#             # We must pass a tuple of ALL packed hashes
+#             cur.execute(query, (tuple(packed_hashes_to_search),))
+#             results = cur.fetchall()
+
+#             # 3. Grouping results by interactionid
+#             matches = defaultdict(lambda: {"offsets": [], "filename": None})
             
-            for interactionid, db_offset_ms, h, filename in results:
-                # Get the query's offset for this same hash
-                q_offset_ms = query_map.get(h) 
+#             for interactionid, db_offset_ms, h, filename in results:
+#                 # Get the query's offset for this same hash
+#                 q_offset_ms = query_map.get(h) 
                 
-                if q_offset_ms is None:
-                    continue 
+#                 if q_offset_ms is None:
+#                     continue 
                 
-                # Calculate the relative time difference (Delta)
-                # Since these are integers (ms), no rounding is needed here
-                delta_t = db_offset_ms - q_offset_ms
+#                 # Calculate the relative time difference (Delta)
+#                 # Since these are integers (ms), no rounding is needed here
+#                 delta_t = db_offset_ms - q_offset_ms
                 
-                if matches[interactionid]["filename"] is None:
-                    matches[interactionid]["filename"] = filename
+#                 if matches[interactionid]["filename"] is None:
+#                     matches[interactionid]["filename"] = filename
                 
-                matches[interactionid]["offsets"].append(delta_t)
+#                 matches[interactionid]["offsets"].append(delta_t)
 
-            # 4. Scoring and Alignment
-            final_results = []
-            for interactionid, data in matches.items():
-                if not data["offsets"]:
-                    continue
+#             # 4. Scoring and Alignment
+#             final_results = []
+#             for interactionid, data in matches.items():
+#                 if not data["offsets"]:
+#                     continue
                 
-                # Use Counter to find the most frequent Delta (the alignment peak)
-                counts = Counter(data["offsets"])
-                best_offset, hit_count = counts.most_common(1)[0]
+#                 # Use Counter to find the most frequent Delta (the alignment peak)
+#                 counts = Counter(data["offsets"])
+#                 best_offset, hit_count = counts.most_common(1)[0]
                 
-                # Score = how many hashes lined up at that specific offset
-                # len(fingerprints) is the total number of hashes we searched for
-                score = hit_count / len(fingerprints)
-                print(f"interactionid={interactionid}--score={score}--best_offset={best_offset}")
-                final_results.append({
-                    "interactionid": interactionid,
-                    "score": round(score, 4),
-                    "offset_ms": best_offset,
-                    "filename": data["filename"]
-                })
+#                 # Score = how many hashes lined up at that specific offset
+#                 # len(fingerprints) is the total number of hashes we searched for
+#                 score = hit_count / len(fingerprints)
+#                 fn= data["filename"]
+#                 print(f"interactionid={interactionid}--score={score}--best_offset={best_offset}--filename={fn}")
+#                 final_results.append({
+#                     "interactionid": interactionid,
+#                     "score": round(score, 4),
+#                     "offset_ms": best_offset,
+#                     "filename": data["filename"]
+#                 })
 
-            # Sort by highest score first
-            return sorted(final_results, key=lambda x: x['score'], reverse=True)
+#             # Sort by highest score first
+#             return sorted(final_results, key=lambda x: x['score'], reverse=True)
 
 def convert_fingerprint(hash_str, timestamp):
     """
@@ -104,7 +183,7 @@ def convert_fingerprint(hash_str, timestamp):
     # Rounding to the nearest 10ms (0.01s) is a common trick. 
     # It's 'fuzzy' enough to ignore micro-jitters but precise enough for alignment.
     offset_ms = int(round(timestamp, 2) * 1000)
-    print(f"packed_hash, offset_ms={packed_hash}, {offset_ms}")
+    # print(f"packed_hash, offset_ms={packed_hash}, {offset_ms}")
     return packed_hash, offset_ms
 
 def align_and_score(query_fps, db_results, time_tolerance_ms=200):

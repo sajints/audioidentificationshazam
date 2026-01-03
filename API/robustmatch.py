@@ -218,7 +218,7 @@ def find_audio_match_robust(long_file_path: str, short_file_path: str, sr: int =
     fingerprint_long = create_audio_fingerprint(y_long, sr)
     fingerprint_short = create_audio_fingerprint(y_short, sr)
     
-    print(f"fingerprint_long={fingerprint_long}--fingerprint_short={fingerprint_short}")            
+    #print(f"fingerprint_long={fingerprint_long}--fingerprint_short={fingerprint_short}")            
 
     feature_similarity = 0.0
     if len(fingerprint_long) > 0 and len(fingerprint_short) > 0:
@@ -331,9 +331,9 @@ def find_audio_match_robust(long_file_path: str, short_file_path: str, sr: int =
         "confidence": confidence,
         "conclusion": conclusion,
         "detailed_scores": cleaned_scores,
-        "silence_segments": cleaned_silence,
-        "segment_matches": cleaned_segments,
-        "files_swapped": files_swapped
+        # "silence_segments": cleaned_silence,
+        # "segment_matches": cleaned_segments,
+        # "files_swapped": files_swapped
     }
 
     # return {

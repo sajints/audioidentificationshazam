@@ -21,7 +21,7 @@ def searchaudioservice(file1):
 
     # 3. Generate Speech-Optimized Fingerprints
     fingerprints = process_audio_v3(path1)
-    print(f"fingerprints={fingerprints}")
+    # print(f"fingerprints={fingerprints}")
 
     basepath = os.path.abspath(os.getcwd())
     savedpath = os.path.join(basepath,"SavedFiles")
