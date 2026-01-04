@@ -170,11 +170,12 @@ def find_audio_match_robust(long_file_path: str, short_file_path: str, sr: int =
     if len(y_long) == len(y_short):
         y_long_norm = normalize_audio_signal(y_long, method='robust')
         y_short_norm = normalize_audio_signal(y_short, method='robust')
-        
+        # Returns True only if every element in y_long_norm and y_short_norm satisfies:
+        # ∣∣y long_norm  − y short_norm  ∣≤(atol+rtol⋅∣y short_norm  ∣)
         if np.allclose(y_long_norm, y_short_norm, rtol=1e-3, atol=1e-6):
             return {
                 "match_type": "EXACT_DUPLICATE",
-                "match_score": 1.0,
+                "match_score": 3.0,
                 "offset_seconds": 0.0,
                 "confidence": "VERY_HIGH",
                 "conclusion": "Files are exact duplicates (possibly with different names)"
