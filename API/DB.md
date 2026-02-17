@@ -3,7 +3,7 @@
 CREATE TABLE fingerprints (
     hash INT NOT NULL,  -- Bit-packed freq bins (e.g., 9 and 11)
     id INT NOT NULL,           -- Unique ID of the audio file
-    offset INT NOT NULL          -- Offset in milliseconds (saves space vs float)
+    timeoffset INT NOT NULL          -- timeoffset in milliseconds (saves space vs float)
 ) PARTITION BY HASH (hash);
 
 -- 2. Create the Partitions (Example: 4 partitions)
@@ -14,8 +14,8 @@ CREATE TABLE fingerprints_p2 PARTITION OF fingerprints FOR VALUES WITH (MODULUS 
 CREATE TABLE fingerprints_p3 PARTITION OF fingerprints FOR VALUES WITH (MODULUS 4, REMAINDER 3);
 
 -- 3. The Covering Index
--- We use a composite index: (hash, file_id, offset)
+-- We use a composite index: (hash, file_id, timeoffset)
 -- This allows "Index-Only Scans," meaning the DB never has to look at the actual 
 -- table rows to answer your query.
 CREATE INDEX idx_fingerprints_lookup 
-ON fingerprints (hash, id, offset);
+ON fingerprints (hash, id, timeoffset);

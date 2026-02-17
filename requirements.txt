@@ -1,5 +1,11 @@
 fastapi==0.116.1
 librosa==0.11.0
-matplotlib==3.10.3
-numpy==2.3.2
-scipy==1.16.0
+#matplotlib==3.10.3
+numpy==2.0.2 #2.3.2
+scipy==1.13.1 #1.16.0
+python-multipart
+chromadb
+transformers
+torch
+psycopg2
+noisereduce

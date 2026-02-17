@@ -2,12 +2,11 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 import shutil
 import os
-import sys
-from fingerprints import process_audio, compare_fingerprints
-from fingerprintsv2 import compare_fingerprints_robust, compare_fingerprints_v2, process_audio_v2
-
+# from fingerprints import process_audio, compare_fingerprints
+# from fingerprintsv2 import compare_fingerprints_robust, compare_fingerprints_v2, process_audio_v2
+from fingerprintsv3 import compare_fingerprints_v3, process_audio_v3 
 from sqllite import create_database, store_fingerprints, match_fingerprints
-from chromavector import chromavectordb
+#from chromavector import chromavectordb
  #convert_fingerprint, 
 from service import searchaudioservice, saveaudioservice
 
@@ -21,7 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-create_database()
+#create_database()
 
 UPLOAD_FOLDER = "audio_files"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -42,25 +41,34 @@ async def saveaudio(file1: UploadFile):
 async def searchaudio(file1: UploadFile):
     return searchaudioservice(file1)
 
-@app.post("/fingerprint")
-async def fingerprint_audio(file: UploadFile = File(...), song_id: str = Form(...)):
-    path = os.path.join(UPLOAD_FOLDER, file.filename)
-    with open(path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+# @app.post("/fingerprint")
+# async def fingerprint_audio(file: UploadFile = File(...), song_id: str = Form(...)):
+#     path = os.path.join(UPLOAD_FOLDER, file.filename)
+#     with open(path, "wb") as f:
+#         shutil.copyfileobj(file.file, f)
 
-    fingerprints = process_audio(path)
-    store_fingerprints(fingerprints, song_id=song_id)
-    return {"message": "Fingerprinting completed", "fingerprints": len(fingerprints)}
+#     fingerprints = process_audio(path)
+#     store_fingerprints(fingerprints, song_id=song_id)
+#     return {"message": "Fingerprinting completed", "fingerprints": len(fingerprints)}
 
-@app.post("/match")
-async def match_audio(file: UploadFile = File(...)):
-    path = os.path.join(UPLOAD_FOLDER, file.filename)
-    with open(path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+# @app.post("/match")
+# async def match_audio(file: UploadFile = File(...)):
+#     path = os.path.join(UPLOAD_FOLDER, file.filename)
+#     with open(path, "wb") as f:
+#         shutil.copyfileobj(file.file, f)
 
-    fingerprints = process_audio(path)
-    match = match_fingerprints(fingerprints)
-    return {"match": match[0], "score": match[1]}
+#     fingerprints = process_audio(path)
+#     match = match_fingerprints(fingerprints)
+#     return {"match": match[0], "score": match[1]}
+
+
+def _safe_upload_path(temp_dir: str, upload: UploadFile, fallback_prefix: str = "upload") -> str:
+    name = upload.filename
+    if not name or not name.strip():
+        name = f"{fallback_prefix}_{id(upload)}"
+    # avoid path traversal
+    name = os.path.basename(name)
+    return os.path.join(temp_dir, name)
 
 
 @app.post("/matchshazam")
@@ -68,8 +76,8 @@ async def match_audio(file1: UploadFile, file2: UploadFile):
     temp_dir = "temp"
     os.makedirs(temp_dir, exist_ok=True)
 
-    path1 = os.path.join(temp_dir, file1.filename)
-    path2 = os.path.join(temp_dir, file2.filename)
+    path1 = _safe_upload_path(temp_dir, file1, "file1")
+    path2 = _safe_upload_path(temp_dir, file2, "file2")
 
     # Save both files correctly
     with open(path1, "wb") as f:

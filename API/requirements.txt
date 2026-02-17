@@ -8,3 +8,4 @@ chromadb
 transformers
 torch
 psycopg2
+pydantic

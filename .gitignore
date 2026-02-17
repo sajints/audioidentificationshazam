@@ -40,8 +40,8 @@ coverage.xml
 # dotenv environment variables file
 .env
 
-audio_files/
+# audio_files/
 ffmpeg*
-*.mp3
+# *.mp3
 *.m4a
 

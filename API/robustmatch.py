@@ -5,6 +5,11 @@ from scipy.stats import pearsonr
 import warnings
 warnings.filterwarnings('ignore')
 # from chroma import chromavectordb
+import librosa
+#import torch
+from scipy.ndimage import maximum_filter
+from scipy.spatial.distance import cosine
+import math
 
 def normalize_audio_signal(y: np.ndarray, method='robust') -> np.ndarray:
     """
@@ -333,7 +338,8 @@ def find_audio_match_robust(long_file_path: str, short_file_path: str, sr: int =
         "conclusion": conclusion,
         "detailed_scores": cleaned_scores,
         # "silence_segments": cleaned_silence,
-        # "segment_matches": cleaned_segments,
+        "segment_matches": scores['segment_matches'], #cleaned_segments,
+        "Length of segment_matches": len(cleaned_segments), #len(scores['segment_matches']) # 
         # "files_swapped": files_swapped
     }
 
@@ -361,4 +367,130 @@ def compare_audio_files_batch(file_pairs: list, sr: int = 22050) -> list:
         result = find_audio_match_robust(long_path, short_path, sr)
         result['file_pair'] = (long_path, short_path)
         results.append(result)
+    return results
+
+
+def find_audio_match_robust_v2(long_file_path: str, short_file_path: str, sr: int = 22050) -> dict:
+    """
+    3-Tier Robust Audio Matcher:
+    1. Spectral Landmark Fingerprinting (Time-invariant)
+    2. FFT Cross-Correlation (Precise Offset)
+    3. Neural Embedding Similarity (Semantic Match)
+    """
+    try:
+        y_long, _ = librosa.load(long_file_path, sr=sr, mono=True)
+        y_short, _ = librosa.load(short_file_path, sr=sr, mono=True)
+    except Exception as e:
+        return {"error": f"Load failed: {e}"}
+
+    if len(y_short) > len(y_long):
+        y_long, y_short = y_short, y_long
+        files_swapped = True
+    else:
+        files_swapped = False
+    # --- STRATEGY 1: Spectral Landmarks (The "Shazam" Constellation) ---
+    def get_constellation(y):
+        # Convert to Spectrogram
+        S = np.abs(librosa.stft(y, n_fft=2048, hop_length=512))
+        # Find local peaks (landmarks)
+        peaks = maximum_filter(S, size=(20, 20)) == S
+        # Threshold to ignore silence
+        peaks &= (S > np.mean(S))
+        return np.argwhere(peaks)
+
+    peaks_long = get_constellation(y_long)
+    peaks_short = get_constellation(y_short)
+    
+    # Calculate Jaccard similarity of peak distributions (Simplified Fingerprint)
+    # In a production app, you'd hash pairs of peaks here
+    fingerprint_score = len(np.intersect1d(peaks_long[:, 1], peaks_short[:, 1])) / len(peaks_short)
+
+    # --- STRATEGY 2: FFT Cross-Correlation (Precise Alignment) ---
+    # Fast Fourier Transform correlation is 100x faster for long files
+    # We use a reduced sample for speed if files are huge
+
+    # 1. Perform the FFT convolution
+    corr = scipy.signal.fftconvolve(y_long, y_short[::-1], mode='valid')
+    best_idx = np.argmax(corr)
+    offset_seconds = best_idx / sr
+
+    # 2. Extract the specific window from the long file that matched
+    y_long_window = y_long[best_idx : best_idx + len(y_short)]
+
+    # 3. Calculate Norms with a safety epsilon
+    # Epsilon (1e-9) prevents division by zero if audio is silent
+    norm_long = np.linalg.norm(y_long_window)
+    norm_short = np.linalg.norm(y_short)
+
+    # print(f"norm_long={norm_long} -- y_long={y_long} -- y_short={y_short}")
+    # 4. Robust Correlation Score Calculation
+    if norm_long > 0 and norm_short > 0:
+        # Normalized Cross-Correlation (NCC) formula
+        correlation_score = corr[best_idx] / (norm_long * norm_short)
+        # print("if norm_long > 0 and norm_short > 0 - before setting np.clip correlation_score=",correlation_score)
+        
+        # Optional: Clip the result between -1 and 1 
+        # (FFT precision can sometimes push it to 1.0000000001)
+        correlation_score = np.clip(correlation_score, -1.0, 1.0)
+        # print("if norm_long > 0 and norm_short > 0 - after setting np.clip correlation_score=",correlation_score)
+
+    else:
+        # If either is pure silence, the correlation is mathematically undefined (set to 0)
+        correlation_score = 0.0
+
+    # 5. Final Sanitization (Double check for any remaining NaN/Inf)
+    if not np.isfinite(correlation_score):
+        correlation_score = 0.0
+
+    # --- STRATEGY 3: Neural Embedding (Semantic Similarity) ---
+    # Using a simple MFCC-based feature vector as a proxy for neural embedding 
+    # (Note: For 5070, use 'laion/clap-htsat-fused' for true Neural matching)
+    mfcc_long = librosa.feature.mfcc(y=y_long[best_idx:best_idx+len(y_short)], sr=sr, n_mfcc=13).mean(axis=1)
+    mfcc_short = librosa.feature.mfcc(y=y_short, sr=sr, n_mfcc=13).mean(axis=1)
+    # Cosine similarity is more robust than Pearson for audio features
+    neural_proxy_score = 1 - cosine(mfcc_long, mfcc_short)
+
+    # --- FINAL WEIGHTED DECISION ---
+    # Landmarks are weighted highest because they resist noise best
+    final_score = (fingerprint_score * 0.5) + (correlation_score * 0.2) + (neural_proxy_score * 0.3)
+    print(f"after final_score fingerprint_score={fingerprint_score} -- correlation_score={correlation_score} --neural_proxy_score={neural_proxy_score} --final_score={final_score} ")
+    neural_proxy_score = float(neural_proxy_score)  if math.isfinite(neural_proxy_score) else 0.0
+    results = {
+        "match_type": "NO_MATCH",
+        "match_score": float(final_score) if math.isfinite(final_score) else 0.0,
+        "offset_seconds": float(offset_seconds) if math.isfinite(offset_seconds) else 0.0,
+        "confidence": "LOW",
+        "details": {
+            "fingerprint": float(fingerprint_score)  if math.isfinite(fingerprint_score) else 0.0,
+            "alignment": float(correlation_score)  if math.isfinite(correlation_score) else 0.0,
+            "semantic": neural_proxy_score
+        }
+    }
+    def sanitize(value):
+        if isinstance(value, float) and (np.isinf(value) or np.isnan(value)):
+            return 0.0  # Or 1.0 depending on your logic
+        return value
+    
+    # Apply to the dictionary
+    results = {k: sanitize(v) for k, v in results.items()}
+    # If you have nested dicts (like 'detailed_scores'):
+    if results["match_score"] in results:
+        results["match_score"] = {k: sanitize(v) for k, v in results["match_score"].items()}
+
+    # Modern Weighted Scoring
+    # If Semantic is extremely high, we weigh it more heavily to prevent "Zero-outs"
+    # semantic_score = results["match_score"]
+    # if semantic_score  > 0.95:
+    #     final_score = (fingerprint_score * 0.2) + (correlation_score * 0.1) + (semantic_score * 0.7)
+    # else:
+    #     final_score = (fingerprint_score * 0.5) + (correlation_score * 0.2) + (semantic_score * 0.3)
+
+    # # Ensure match_score is never exactly 0 if a semantic match was found
+    # final_score = max(final_score, semantic_score * 0.5)
+
+    if final_score > 0.85:
+        results.update({"match_type": "HIGH_FIDELITY_MATCH", "confidence": "VERY_HIGH"})
+    elif final_score > 0.6:
+        results.update({"match_type": "ROBUST_PARTIAL_MATCH", "confidence": "MEDIUM"})
+
     return results

@@ -1,5 +1,12 @@
 # audioidentificationshazam
 
+Acoustic Fingerprinting (Constellation Map): The "Shazam" method. Robust against noise and pitch shifts.
+
+Cross-Correlation in Frequency Domain (FFT-based): Highly efficient for finding the exact offset of a clip within a long file.
+
+Neural Audio Embeddings (CLAP/VGGish): Uses AI to understand the "essence" of the sound. This matches even if the audio was re-recorded or heavily distorted.
+
+
 # different strategies for comparing fingerprints
 
 1. "jaccard"

@@ -14,11 +14,11 @@ def store_fingerprints(interactionid, fingerprints, filename):
             data = []
             for h, t in fingerprints:
                 packed_hash, offset_ms = convert_fingerprint(h, t)
-                # Create a 4-item tuple to match: (hash, interactionid, offsetms, filename)
-                data.append((packed_hash, interactionid, offset_ms, filename))
+                # Create a 4-item tuple to match: (hash, interactionid, timeoffset, filename)
+                data.append((packed_hash, str(interactionid), offset_ms, filename))
             query = """
                 INSERT INTO fingerprints 
-                (hash, interactionid, offsetms, filename) 
+                (hash, interactionid, timeoffset, filename) 
                 VALUES (%s, %s, %s, %s)
             """
             cur.executemany(query, data)
@@ -48,7 +48,7 @@ def find_match_in_db(fingerprints, min_score=0.05, top_n=5):
 
     # 2. Database Connection
     # Using a JOIN or specific indexing here is better for performance
-    query = "SELECT interactionid, offsetms, hash, filename FROM fingerprints WHERE hash IN %s"
+    query = "SELECT interactionid, timeoffset, hash, filename FROM fingerprints WHERE hash IN %s"
     
     # SECURITY NOTE: In production, use environment variables for these!
     try:
@@ -115,7 +115,7 @@ def find_match_in_db(fingerprints, min_score=0.05, top_n=5):
 #         query_map[p_hash] = p_offset_ms # Store the packed version!
 
 #     # 2. Database Connection
-#     query = "SELECT interactionid, offsetms, hash, filename FROM fingerprints WHERE hash IN %s"
+#     query = "SELECT interactionid, timeoffset, hash, filename FROM fingerprints WHERE hash IN %s"
     
 #     with psycopg2.connect(host="localhost", port="5432", database="postgres", user="postgres", password="admin") as conn:
 #         with conn.cursor() as cur:
