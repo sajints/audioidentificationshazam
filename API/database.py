@@ -24,7 +24,7 @@ def store_fingerprints(interactionid, fingerprints, filename):
             cur.executemany(query, data)
             conn.commit()
 
-def find_match_in_db(fingerprints, min_score=0.05, top_n=5):
+def find_match_in_db(fingerprints, min_score=0.35, top_n=5):
     """
     Finds matches while ignoring noise/silence and filtering weak results.
     """
@@ -64,11 +64,17 @@ def find_match_in_db(fingerprints, min_score=0.05, top_n=5):
                 matches = defaultdict(lambda: {"offsets": [], "filename": None})
                 for interactionid, db_offset_ms, h, filename in results:
                     q_offset_ms = query_map.get(h) 
+                    # print(f"Matching filename: {filename}---q_offset_ms={q_offset_ms}")
+
                     if q_offset_ms is None: continue 
                     
                     delta_t = db_offset_ms - q_offset_ms
+                    # print(f"Matching filename: {matches[interactionid]["filename"] }---delta_t={delta_t}")
+
                     if matches[interactionid]["filename"] is None:
                         matches[interactionid]["filename"] = filename
+                        print(f"Matching filename: {matches[interactionid]["filename"] }---added")
+
                     
                     matches[interactionid]["offsets"].append(delta_t)
 
@@ -82,19 +88,19 @@ def find_match_in_db(fingerprints, min_score=0.05, top_n=5):
                     
                     # Score calculation
                     score = hit_count / total_query_hashes
+                    print(f"filename={data["filename"]}--match score={score}--hit_count={hit_count}--total_query_hashes={total_query_hashes}")
                     
                     # LOGIC: Ignore results that don't meet the minimum match threshold
                     # This prevents "random" background noise from counting as a match.
-                    if score < min_score:
+                    if score < min_score and hit_count < 5:
                         continue
-
                     final_results.append({
                         "interactionid": interactionid,
                         "score": round(score, 4),
                         "offset_ms": best_offset,
                         "filename": data["filename"]
                     })
-
+                    # print(f"after final_results.append - {data["filename"]}")
                 # Sort and return Top N
                 return sorted(final_results, key=lambda x: x['score'], reverse=True)[:top_n]
 

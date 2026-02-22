@@ -49,8 +49,8 @@ def searchaudioservice(file1):
         # with open(path2, "wb") as f:
         fingerprint2 = process_audio_v3(path2)
         print(f"path1={path1} -- path2={path2}")
-        #match_score = find_audio_match_robust(path1,path2) #TBD
-        match_score = find_audio_match_robust_v2(path1,path2)
+        match_score = find_audio_match_robust(path1,path2) #TBD
+        # match_score = find_audio_match_robust_v2(path1,path2)
         resultdict[os.path.basename(path2)] = match_score
 
     #filename = file1.file
@@ -82,3 +82,4 @@ def saveaudioservice(file1):
     # hash,offset = [convert_fingerprint(h, t) for h, t in fingerprints]
     store_fingerprints(counter,fingerprints,filename)
     print(f"fingerprints={fingerprints}--counter={counter}--filename={filename}")
+    return "Saved the file"

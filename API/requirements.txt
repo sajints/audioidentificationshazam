@@ -8,4 +8,9 @@ chromadb
 transformers
 torch
 psycopg2
+psycopg2-binary
 pydantic
+cffi
+soundfile 
+llvmlite
+numba

@@ -10,6 +10,7 @@ import librosa
 from scipy.ndimage import maximum_filter
 from scipy.spatial.distance import cosine
 import math
+import os
 
 def normalize_audio_signal(y: np.ndarray, method='robust') -> np.ndarray:
     """
@@ -153,13 +154,57 @@ def sliding_window_correlation(long_signal: np.ndarray, short_signal: np.ndarray
     
     return best_score, best_offset
 
+def get_segment_matches(
+    y_long, 
+    y_short, 
+    best_offset_samples, 
+    sr: int = 22050, 
+    segment_size_sec=5,
+    step_sec=1,              # smaller step!
+    threshold=0.6            # slightly lower threshold
+):
+    segment_size = int(sr * segment_size_sec)
+    step_size = int(sr * step_sec)
+
+    matches = []
+
+    for j in range(0, len(y_short) - segment_size, step_size):
+        seg_short = y_short[j : j + segment_size]
+        i = j + best_offset_samples
+
+        if i < 0 or (i + segment_size) > len(y_long):
+            continue
+
+        seg_long = y_long[i : i + segment_size]
+
+        # Normalize BOTH segments
+        seg_long = normalize_audio_signal(seg_long)
+        seg_short = normalize_audio_signal(seg_short)
+
+        try:
+            score, _ = pearsonr(seg_long, seg_short)
+            if not np.isnan(score) and score > threshold:
+                matches.append({
+                    'score': float(score),
+                    'time_short': j / sr,
+                    'time_long': i / sr
+                })
+        except:
+            continue
+
+    return matches
+
 def find_audio_match_robust(long_file_path: str, short_file_path: str, sr: int = 22050) -> dict:
 #def find_audio_match_robust(y_long: np.ndarray, y_short: np.ndarray, sr: int = 22050) -> dict:
-
     """
     Enhanced audio matching with multiple detection strategies
     y: 
+    # Ensemble Approach that combines three distinct signal processing and statistical techniques.
+        # 1. Cross-Correlation (Time-Domain Matching)
+        # 2. Audio Fingerprinting (Feature Similarity)
+        # 3. Segmented Pearson Correlation (Sliding Window)
     """
+    searchedfile = os.path.basename(long_file_path)
     try:
         y_long, _ = librosa.load(long_file_path, sr=sr, mono=True)
         y_short, _ = librosa.load(short_file_path, sr=sr, mono=True)
@@ -192,8 +237,8 @@ def find_audio_match_robust(long_file_path: str, short_file_path: str, sr: int =
     y_long_norm = normalize_audio_signal(y_long, method='robust')
     y_short_norm = normalize_audio_signal(y_short, method='robust')
     
-    print(f"after normalize_audio_signal - y_long_norm={y_long_norm}")            
-    print(f"after normalize_audio_signal - y_short_norm={y_short_norm}")            
+    # print(f"after normalize_audio_signal - y_long_norm={y_long_norm}")            
+    # print(f"after normalize_audio_signal - y_short_norm={y_short_norm}")            
 
     if np.sum(np.abs(y_short_norm)) == 0 or np.sum(np.abs(y_long_norm)) == 0:
         return {
@@ -205,21 +250,24 @@ def find_audio_match_robust(long_file_path: str, short_file_path: str, sr: int =
         }
     
     correlation = scipy.signal.correlate(y_long_norm, y_short_norm, mode='full')
-    print(f"after scipy.signal.correlate - correlation={correlation}")            
+    # Force correlation into a 0.0 - 1.0 range
+    # print(f"after scipy.signal.correlate - correlation={correlation}")            
 
     max_corr_idx = np.argmax(correlation)
-    print(f"after np.argmax - max_corr_idx={max_corr_idx}")            
+    # print(f"after np.argmax - max_corr_idx={max_corr_idx}")            
 
     max_score_corr = correlation[max_corr_idx] / len(y_short_norm)
-    print(f"after max_score_corr={max_score_corr}")            
+    # print(f"after max_score_corr={max_score_corr}")            
+    # max_score_corr = min(1.0, correlation[max_corr_idx] / (np.linalg.norm(y_long_norm) * np.linalg.norm(y_short_norm)))
+    # print(f"after max_score_corr2={max_score_corr}")            
 
     offset_samples_corr = max_corr_idx - (len(y_short_norm) - 1)
     offset_seconds_corr = offset_samples_corr / sr
-    print(f"after offset_samples_corr={offset_samples_corr}--offset_seconds_corr={offset_seconds_corr}")            
+    # print(f"after offset_samples_corr={offset_samples_corr}--offset_seconds_corr={offset_seconds_corr}")            
 
     window_score, window_offset = sliding_window_correlation(y_long_norm, y_short_norm)
     window_offset_seconds = window_offset / sr
-    print(f"after window_score={window_score}--window_offset={window_offset}--window_offset_seconds={window_offset_seconds}")            
+    # print(f"after window_score={window_score}--window_offset={window_offset}--window_offset_seconds={window_offset_seconds}")            
 
     fingerprint_long = create_audio_fingerprint(y_long, sr)
     fingerprint_short = create_audio_fingerprint(y_short, sr)
@@ -237,42 +285,34 @@ def find_audio_match_robust(long_file_path: str, short_file_path: str, sr: int =
 
     segment_matches = []
     segment_size = sr * 5
-    
-    for i in range(0, len(y_long) - segment_size, segment_size // 2):
-        segment_long = y_long[i:i + segment_size]
-        if len(segment_long) < segment_size:
-            continue
-            
-        segment_long_norm = normalize_audio_signal(segment_long)
-        
-        for j in range(0, len(y_short) - segment_size, segment_size // 2):
-            segment_short = y_short[j:j + segment_size]
-            if len(segment_short) < segment_size:
-                continue
-                
-            segment_short_norm = normalize_audio_signal(segment_short)
-            
-            try:
-                seg_corr, _ = pearsonr(segment_long_norm, segment_short_norm)
-                if not np.isnan(seg_corr) and seg_corr > 0.7:
-                    segment_matches.append({
-                        'score': seg_corr,
-                        'long_start': i / sr,
-                        'short_start': j / sr
-                    })
-            except:
-                continue
+
+    # Calculate the real relative offset first
+    best_offset_samples = max_corr_idx - (len(y_short_norm) - 1)
+    segmentmatches = get_segment_matches(y_long, y_short, best_offset_samples, 22050, 2)
+
+    # --- STRATEGY 3: Neural Embedding (Semantic Similarity) ---
+    # Using a simple MFCC-based feature vector as a proxy for neural embedding 
+    # (Note: For 5070, use 'laion/clap-htsat-fused' for true Neural matching)
+    # 1. Perform the FFT convolution
+    corr = scipy.signal.fftconvolve(y_long, y_short[::-1], mode='valid')
+    best_idx = np.argmax(corr)
+    mfcc_long = librosa.feature.mfcc(y=y_long[best_idx:best_idx+len(y_short)], sr=sr, n_mfcc=13).mean(axis=1)
+    mfcc_short = librosa.feature.mfcc(y=y_short, sr=sr, n_mfcc=13).mean(axis=1)
+    # Cosine similarity is more robust than Pearson for audio features
+    neural_proxy_score = 1 - cosine(mfcc_long, mfcc_short)
+    neural_proxy_score = float(neural_proxy_score)  if math.isfinite(neural_proxy_score) else 0.0
 
     print(f"max_score_corr={max_score_corr}")            
     print(f"window_score={window_score}")            
     print(f"feature_similarity={feature_similarity}")            
-    print(f"segment_matches={segment_matches}--len(segment_matches)={len(segment_matches)}")            
+    print(f"len(segment_matches)={len(segmentmatches)}")            
 
     scores = {
         'correlation': max(0, max_score_corr),
         'sliding_window': max(0, window_score),
         'feature_similarity': max(0, feature_similarity),
-        'segment_matches': len(segment_matches)
+        'semantic_similarity': neural_proxy_score,
+        'segment_matches': len(segmentmatches)
     }
     
     # final_score = (
@@ -282,24 +322,25 @@ def find_audio_match_robust(long_file_path: str, short_file_path: str, sr: int =
     # )
     final_score = (
         scores['correlation'] * 0.25 +
-        scores['sliding_window'] * 0.25 +
+        scores['semantic_similarity'] * 0.25 +
+        #scores['sliding_window'] * 0.25 +
         scores['feature_similarity'] * 0.50
     )
     print(f"final_score={final_score}")            
     # 1. Very Strong Match (Exponents of both texture and timing)
-    if final_score >= 0.9 or scores['sliding_window'] >= 0.95:
+    if final_score >= 0.9 and scores['segment_matches'] >= 10: # scores['sliding_window'] >= 0.95:
         match_type = "EXACT_MATCH"
         confidence = "VERY_HIGH"
         conclusion = "The shorter audio is contained within the longer audio with high confidence"
         offset_seconds = offset_seconds_corr if scores['correlation'] > scores['sliding_window'] else window_offset_seconds
     # 2. Strong Identification (Relies more on the 'Texture'/Fingerprint)    
-    elif final_score >= 0.7 or scores['segment_matches'] >= 3:
+    elif final_score >= 0.7 and scores['segment_matches'] >= 3:
         match_type = "PARTIAL_MATCH"
         confidence = "HIGH"
         conclusion = f"Partial match detected with {scores['segment_matches']} matching segments"
         offset_seconds = window_offset_seconds
     # 3. Fuzzy/Noisy Match    
-    elif final_score >= 0.5 or (scores['feature_similarity'] > 0.6 and scores['segment_matches'] >= 1):
+    elif final_score >= 0.5 and (scores['feature_similarity'] > 0.6 and scores['segment_matches'] >= 1):
         match_type = "WEAK_MATCH"
         confidence = "MEDIUM"
         conclusion = "Weak similarity detected - possible match with significant differences"
@@ -331,6 +372,7 @@ def find_audio_match_robust(long_file_path: str, short_file_path: str, sr: int =
     }
 
     return {
+        "searchedfile": searchedfile,
         "match_type": match_type,
         "match_score": float(final_score),
         # "offset_seconds": float(offset_seconds),
@@ -338,8 +380,8 @@ def find_audio_match_robust(long_file_path: str, short_file_path: str, sr: int =
         "conclusion": conclusion,
         "detailed_scores": cleaned_scores,
         # "silence_segments": cleaned_silence,
-        "segment_matches": scores['segment_matches'], #cleaned_segments,
-        "Length of segment_matches": len(cleaned_segments), #len(scores['segment_matches']) # 
+        # "segment_matches": scores['segment_matches'] #, #cleaned_segments,
+        #"Length of segment_matches": len(cleaned_segments), #len(scores['segment_matches']) # 
         # "files_swapped": files_swapped
     }
 
